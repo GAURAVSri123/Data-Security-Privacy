@@ -2419,3 +2419,6 @@ The complete architecture can be remembered as:
 ```
 
 > **The server transports encrypted data; the endpoints perform the cryptographic operations that establish and evolve the keys used to protect the message.**
+
+
+<img width="1024" height="1536" alt="Image" src="https://github.com/user-attachments/assets/61d8966d-7dc9-48d0-8052-73ea10ba2371" />
