@@ -1,8 +1,8 @@
 # Signal Protocol: Complete Guide to Every Key and Metadata Privacy
 
-![Signal complete flowchart](signal_e2ee_flowchart.svg)
+<img width="1200" height="2935" alt="Image" src="https://github.com/user-attachments/assets/7a4b6577-c0a7-479b-8d96-b921b0550792" />
 
-*Complete flowchart: keys, X3DH, Double Ratchet, encryption, Sealed Sender, groups, calls, and what the server can still see. (A PNG copy is included as `signal_e2ee_flowchart.png`.)*
+
 
 ---
 
@@ -11,8 +11,7 @@
 > This guide combines two topics:
 > 1. **Part A: the protocol architecture** (keys, X3DH, Double Ratchet, message encryption, groups, calls)
 > 2. **Part B: metadata minimization** (Sealed Sender, private contact discovery, encrypted profiles, private groups, usernames)
->
-> Diagrams are written in **Mermaid** and render on GitHub, GitLab, Obsidian, VS Code (with a Mermaid extension) and Notion.
+
 >
 > **Accuracy note:** Signal evolves. Names like X3DH are from the public specification; newer Signal versions add post-quantum protection (PQXDH and a post-quantum ratchet). Where an infographic simplifies something (for example "AES-256-GCM"), this guide points out the difference. For exact current parameters, always check Signal's official documentation.
 
