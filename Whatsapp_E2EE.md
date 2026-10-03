@@ -8,8 +8,7 @@
 
 > WhatsApp uses the **Signal Protocol** for end-to-end encryption (E2EE). This guide explains every key, where it lives, what it does, and how the whole flow fits together, from registration to decryption.
 >
-> Diagrams are written in **Mermaid**. They render automatically in GitHub, GitLab, Obsidian, VS Code (with a Mermaid extension), Notion and most Markdown viewers.
->
+
 > Note: the Signal Protocol is public, but WhatsApp's production implementation has proprietary parts (multi-device, backups, client-side details). Algorithm names below follow the public Signal specification and libsignal; treat exact parameters as "how the protocol is designed" rather than a statement about WhatsApp's internal code.
 
 ---
