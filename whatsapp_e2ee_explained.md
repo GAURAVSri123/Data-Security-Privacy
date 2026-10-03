@@ -1,8 +1,8 @@
-# WhatsApp End-to-End Encryption: Complete Guide to Every Key
+# WhatsApp End-to-End Encryption
 
-![WhatsApp E2EE complete flowchart](whatsapp_e2ee_flowchart.svg)
+<img width="1200" height="1830" alt="Image" src="https://github.com/user-attachments/assets/db730f2c-0667-4066-9066-63221780d6d3" />
 
-*Complete flowchart: registration, keys, X3DH, Double Ratchet, encryption, delivery and decryption. (A PNG copy is included as `whatsapp_e2ee_flowchart.png`.)*
+
 
 ---
 
