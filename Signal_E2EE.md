@@ -1,8 +1,8 @@
 # Signal Protocol: Complete Guide to Every Key and Metadata Privacy
 
-<img width="1200" height="2935" alt="Image" src="https://github.com/user-attachments/assets/7a4b6577-c0a7-479b-8d96-b921b0550792" />
+![Signal complete flowchart](signal_e2ee_flowchart.svg)
 
-
+*Complete flowchart: keys, X3DH, Double Ratchet, encryption, Sealed Sender, groups, calls, and what the server can still see. (A PNG copy is included as `signal_e2ee_flowchart.png`.)*
 
 ---
 
@@ -11,9 +11,10 @@
 > This guide combines two topics:
 > 1. **Part A: the protocol architecture** (keys, X3DH, Double Ratchet, message encryption, groups, calls)
 > 2. **Part B: metadata minimization** (Sealed Sender, private contact discovery, encrypted profiles, private groups, usernames)
-
 >
-> **Accuracy note:** Signal evolves. Names like X3DH are from the public specification; newer Signal versions add post-quantum protection (PQXDH and a post-quantum ratchet). Where an infographic simplifies something (for example "AES-256-GCM"), this guide points out the difference. For exact current parameters, always check Signal's official documentation.
+> Diagrams are written in **Mermaid** and render on GitHub, GitLab, Obsidian, VS Code (with a Mermaid extension) and Notion.
+>
+> **Accuracy note:** Signal evolves. The classic handshake X3DH is the base design; **Signal now uses PQXDH (X3DH plus a post-quantum step) for new chats, and a post-quantum ratchet on top of the Double Ratchet**. This guide explains X3DH first (because PQXDH is built on it) and then PQXDH. Where an infographic simplifies something (for example "AES-256-GCM"), this guide points out the difference. For exact current parameters, always check Signal's official documentation.
 
 ---
 
@@ -26,7 +27,7 @@
 4. [Prekeys (Bob publishes)](#4-prekeys-bob-publishes)
 5. [Retrieve and verify keys (Alice)](#5-retrieve-and-verify-keys-alice)
 6. [Ephemeral key](#6-ephemeral-key)
-7. [X3DH: initial key agreement](#7-x3dh-initial-key-agreement)
+7. [X3DH and PQXDH: initial key agreement](#7-x3dh-and-pqxdh-initial-key-agreement)
 8. [Double Ratchet](#8-double-ratchet)
 9. [Message encryption](#9-message-encryption)
 10. [Delivery and decryption](#10-delivery-and-decryption)
@@ -60,7 +61,7 @@ Signal solves four problems and then adds a fifth (metadata):
 |---|---|
 | Who is this device? | **Identity keys** (long-term key pair per device) |
 | How can Alice start a secure chat when Bob is offline? | **Prekeys** published to the server in advance |
-| How do they agree on a secret without sending it? | **X3DH** (Diffie-Hellman based key agreement) |
+| How do they agree on a secret without sending it? | **X3DH / PQXDH** (Diffie-Hellman based key agreement, now with a post-quantum step) |
 | How do we keep each message safe, even if a key leaks later? | **Double Ratchet** (a new key for every message) |
 | How do we hide who is talking to whom from the server? | **Sealed Sender** and related privacy features |
 
@@ -83,6 +84,8 @@ flowchart LR
 | Identity key pair | `IK` | Long-term asymmetric (Curve25519; signatures use Ed25519-style XEdDSA) | Until reinstall / re-register | Private: device only. Public: server | Long-term identity of one device; used for authentication |
 | Signed prekey | `SPK` | Medium-term asymmetric | Rotated periodically | Private: device. Public + signature: server | Lets others start a session while you are offline; signed by `IK` |
 | One-time prekey | `OPK` | Single-use asymmetric | Used once, then discarded | Private: device. Public batch: server | Adds fresh randomness to the first handshake |
+| Post-quantum signed prekey | `PQSPK` | KEM key pair (Kyber / ML-KEM) | Rotated periodically | Private: device. Public + signature: server | Used only in PQXDH: Alice encapsulates a secret to it |
+| KEM shared secret | `SS` | Symmetric | One handshake | Derived on both sides | Extra secret mixed into the SK so it stays safe against quantum computers |
 | Ephemeral key | `EK` | Short-term asymmetric | One session setup | Sender's device | Forward secrecy for the handshake |
 | Shared secret | `SK` | Symmetric | Seeds the ratchet once | Both devices (derived, never sent) | Starting point of the Double Ratchet |
 | HKDF / KDF | | Function | n/a | n/a | Turns secrets into well-separated keys |
@@ -130,6 +133,7 @@ For asynchronous messaging, Bob (receiver) uploads a bundle ahead of time:
 | `IK_B` (public) | Bob's identity key |
 | `SPK_B` (public) + signature | Signed prekey; the signature (made with `IK_B`) proves it is Bob's |
 | `OPK_B1, OPK_B2, ...` (public) | A batch of one-time prekeys; each is handed out once |
+| `PQSPK_B` (public) + signature | **PQXDH only:** a post-quantum (KEM) prekey, signed by `IK_B`. Alice uses it to create the extra quantum-safe secret |
 
 ```mermaid
 flowchart TB
@@ -142,6 +146,7 @@ flowchart TB
 ```
 
 - **SPK** is medium-lived and rotated. The signature stops the server swapping in a fake key.
+- **PQSPK** (PQXDH) is a Kyber/ML-KEM public key. It does not replace the other keys; it adds one more secret to the handshake.
 - **OPK** is used once and then discarded, which gives each first handshake unique entropy. If OPKs run out, the handshake still works (without DH4).
 
 ---
@@ -191,7 +196,11 @@ EK_A = (EK_A_priv, EK_A_pub)
 
 ---
 
-## 7. X3DH: initial key agreement
+## 7. X3DH and PQXDH: initial key agreement
+
+**Short answer to "why show X3DH if PQXDH replaced it?"** PQXDH did not throw X3DH away. PQXDH is X3DH **plus one extra post-quantum step**. All the X3DH keys and the four Diffie-Hellman calculations are still there, so you must understand X3DH first. What changed is that Signal now requires the PQXDH version for new chats.
+
+### 7.1 X3DH (the base design)
 
 **X3DH (Extended Triple Diffie-Hellman)** combines Alice's keys and Bob's published keys into a shared secret that is never transmitted.
 
@@ -205,7 +214,7 @@ EK_A = (EK_A_priv, EK_A_pub)
 | DH4 | `DH(EK_A_priv, OPK_B_pub)` | Extra uniqueness / replay resistance |
 
 ```
-SK = HKDF( DH1 || DH2 || DH3 || DH4 )
+SK = HKDF( DH1 || DH2 || DH3 || DH4 )          (X3DH)
 ```
 
 ```mermaid
@@ -234,9 +243,68 @@ flowchart TB
     H --> SK["Initial shared secret SK"]
 ```
 
-Alice's first message carries (in the clear, since they are public) `IK_A_pub`, `EK_A_pub` and which `OPK` she used. Bob repeats the DH math with his private keys and gets the **same SK**.
+### 7.2 Why X3DH alone is not enough: "harvest now, decrypt later"
 
-> **PQXDH (newer versions):** Signal later added a post-quantum key-encapsulation (KEM) prekey to the handshake, so the shared secret stays safe even against a future quantum computer that recorded today's traffic. The idea is the same; one extra secret is mixed into the HKDF.
+X3DH relies on elliptic-curve Diffie-Hellman. A future quantum computer could break that math. An attacker could **record encrypted traffic today and decrypt it years later**, once such a computer exists. Protecting the handshake against this is the goal of PQXDH.
+
+### 7.3 PQXDH (what Signal uses now)
+
+PQXDH keeps **everything in X3DH** and adds a **post-quantum key encapsulation mechanism (KEM)**, CRYSTALS-Kyber (standardized by NIST as ML-KEM).
+
+| Extra piece | Description |
+|---|---|
+| Bob's PQ prekey | A KEM public key `PQSPK_B`, signed by `IK_B`, published with his other prekeys |
+| Alice encapsulates | She uses `PQSPK_B` to create a random secret `SS` and a KEM ciphertext `CT` |
+| Alice sends `CT` | Inside her first message (together with `IK_A`, `EK_A`, OPK id) |
+| Bob decapsulates | He uses his private PQ key to recover the same `SS` |
+
+```
+SK = HKDF( DH1 || DH2 || DH3 || DH4 || SS )     (PQXDH)
+```
+
+```mermaid
+flowchart TB
+    subgraph X["Classic part (same as X3DH)"]
+        D["DH1, DH2, DH3, DH4"]
+    end
+    subgraph PQ["Post-quantum part (new in PQXDH)"]
+        K["Kyber / ML-KEM:<br/>Alice encapsulates to Bob's PQ prekey"]
+        K --> SS["KEM secret SS"]
+    end
+    D --> H["HKDF"]
+    SS --> H
+    H --> SK["Initial shared secret SK"]
+```
+
+```mermaid
+sequenceDiagram
+    participant A as Alice
+    participant S as Signal server
+    participant B as Bob
+    A->>S: Request Bob's bundle
+    S-->>A: IK_B, SPK_B, OPK_B, PQSPK_B (+ signatures)
+    A->>A: DH1..DH4, plus KEM encapsulation gives SS and CT
+    A->>A: SK = HKDF(DH1..DH4, SS)
+    A->>S: First message: IK_A pub, EK_A pub, OPK id, CT, ciphertext
+    S->>B: Forward
+    B->>B: Same DH math, decapsulate CT to get SS, same SK
+```
+
+**Why both, instead of replacing the elliptic-curve part?** Signal combines the two secrets, so an attacker has to break **both** the classic math and the post-quantum math. If either one holds, the session secret stays safe.
+
+**Honest limits:** PQXDH protects the *confidentiality* of the handshake against future quantum attacks. Authentication (proving who you are) still uses classical elliptic-curve keys in this version.
+
+### 7.4 Summary: X3DH vs PQXDH
+
+| | X3DH | PQXDH |
+|---|---|---|
+| Keys used | IK, SPK, OPK, EK | Same keys, **plus** a post-quantum KEM prekey |
+| Secrets mixed into SK | DH1 to DH4 | DH1 to DH4 **plus** the KEM secret SS |
+| Safe against future quantum computer (harvest now, decrypt later) | No | Yes, for the handshake |
+| Status in Signal | Original design; being phased out for new chats | Current handshake |
+| Relationship | The base | An extension of the base (not a rewrite) |
+
+Everything after the handshake (Double Ratchet, message keys, encryption) works the same way, because both produce an initial shared secret `SK`.
 
 ---
 
@@ -292,7 +360,7 @@ sequenceDiagram
 
 Each reply brings fresh randomness that an attacker who stole old keys does not have. **Result: break-in recovery (post-compromise security).**
 
-> **Post-quantum ratchet (newer versions):** recent Signal releases also add a post-quantum component to the ratchet itself, so ongoing messages (not only the first handshake) resist future quantum attacks.
+> **Post-quantum ratchet (Triple Ratchet):** in 2025 Signal added the Sparse Post-Quantum Ratchet (SPQR) alongside the classic Double Ratchet, a combination Signal calls the **Triple Ratchet**. PQXDH protects the *start* of the conversation; the post-quantum ratchet keeps protecting the ongoing messages. The key hierarchy (root, chain, message keys) works the same way.
 
 | Property | Provided by |
 |---|---|
@@ -581,7 +649,7 @@ flowchart TB
 
 ## 21. Signal vs WhatsApp: how they differ and on what basis
 
-**Short answer:** for the **content of one-to-one messages**, both use the **same cryptographic core** (the Signal Protocol: X3DH, Double Ratchet, Curve25519). The real differences are in **who builds it, how much the service learns about you (metadata), what is open to inspection, and the features around the encryption**.
+**Short answer:** for the **content of one-to-one messages**, both use the **same cryptographic core** (the Signal Protocol: an X3DH-style key agreement, Double Ratchet, Curve25519). Signal has since upgraded its handshake to PQXDH and added a post-quantum ratchet; see row 2b. The real differences are in **who builds it, how much the service learns about you (metadata), what is open to inspection, and the features around the encryption**.
 
 > Policies and features change often (usernames, backups, key transparency, business features). Treat the rows below as the design and typical behavior as of this guide, and verify current details in each app's official documentation and privacy policy.
 
@@ -595,7 +663,7 @@ flowchart TB
 | Prekeys | IK, SPK, OPK | Same concept, custom device management |
 | Groups | Sender Keys + private groups | Sender Keys (similar, with extra features) |
 | Multi-device | Linked devices | Client-side fan-out, more complex |
-| Key verification | Safety numbers + QR | Security code + QR; Key Transparency |
+| Key verification | Safety numbers + QR (automatic key verification reported in 2026) | Security code + QR; Key Transparency |
 | Open source | Yes | Partially (closed components) |
 
 ### 21.2 Detailed comparison, basis by basis
@@ -604,6 +672,7 @@ flowchart TB
 |---|---|---|---|---|
 | 1 | **Who runs it / business model** | Non-profit (Signal Foundation). Funded by donations and grants. No advertising. | Owned by Meta, a for-profit company. Business messaging and the wider Meta ecosystem are part of the business. | The incentive to collect or use data differs, even if content is encrypted in both. |
 | 2 | **Message-content encryption** | Signal Protocol (X3DH/PQXDH + Double Ratchet) | Signal Protocol, adopted by WhatsApp and rolled out to all chats in 2016 | **Same strength for content.** Neither company can read 1-to-1 message text. |
+| 2b | **Post-quantum protection** | PQXDH handshake (X3DH + Kyber/ML-KEM) and, since 2025, a post-quantum ratchet (SPQR, "Triple Ratchet") | I did not find a public confirmation that WhatsApp has deployed PQXDH; check WhatsApp's current documentation | Protects recorded traffic against future quantum computers ("harvest now, decrypt later"). A real difference in the encryption layer if WhatsApp has not adopted it. |
 | 3 | **Source code and auditability** | Clients, protocol libraries and server code are open source; anyone can inspect and build them | Client and server are closed source. The protocol is described in a published whitepaper, but the production app cannot be fully audited by outsiders | Open code lets the community verify claims instead of trusting the company. |
 | 4 | **Metadata the service keeps** | Designed to keep almost nothing: essentially account creation and last-connection information, not who you talk to | Collects more: phone number, profile info, device and connection info, usage and group information, according to its privacy policy | Metadata reveals who you talk to, when and how often, even without reading messages. |
 | 5 | **Sender hiding (Sealed Sender)** | Yes, the sender identity is hidden from the service when Sealed Sender applies | No publicly documented equivalent; the service knows both sender and recipient for routing | Signal's server may not learn who sent a message; WhatsApp's does. |
@@ -611,7 +680,7 @@ flowchart TB
 | 7 | **Identity / phone number** | Phone number needed to register, but **usernames** let you connect without sharing your number | Phone number is the identity; username-style features have been introduced or tested more recently, so check the current status | Sharing a phone number exposes you to others who have it. |
 | 8 | **Groups** | Group membership and details designed to be unavailable to the service (anonymous credentials, zkgroup). Messages use Sender Keys | Messages use Sender Keys (same idea), but the service needs to know group membership to deliver and manage groups | Who is in which group is sensitive metadata. |
 | 9 | **Profiles** | Name and photo encrypted with a profile key shared with trusted contacts; service cannot read them | Profile info is visible according to your privacy settings | Encrypted profiles keep identity details from the service. |
-| 10 | **Key verification** | Safety numbers (60 digits / QR) | Security code (60 digits / QR) plus **Key Transparency** (an auditable log that helps detect silently swapped keys) | Both defend against a malicious server swapping keys; the methods differ. |
+| 10 | **Key verification** | Safety numbers (60 digits / QR); automatic key verification was reported as introduced in August 2026, so check Signal's current docs | Security code (60 digits / QR) plus **Key Transparency** (an auditable log that helps detect silently swapped keys) | Both defend against a malicious server swapping keys; the methods differ. |
 | 11 | **Backups** | Cloud chat backup was historically not offered by default; options (local encrypted backups, newer optional secure backups) depend on platform and version | Cloud backups (Google Drive / iCloud) are common. They are **not** protected by the message E2EE by default; an **optional** encrypted backup uses a password or 64-digit key | An unencrypted backup can defeat E2EE: someone with access to the backup could read the chats. |
 | 12 | **Multi-device** | Each linked device has its own identity key and ratchet; messages encrypted per device | Same idea (client-side fan-out), added later and more complex because of the larger feature set | More devices means more keys to manage and more places a message can be read. |
 | 13 | **Business / extra features** | Focused on private messaging; minimal extra services | Includes business accounts and business messaging, payments in some regions and other services. Some business chats are handled by business tools or by Meta-hosted infrastructure and are not private in the same way as a person-to-person chat | More features and integrations mean more data flows beyond simple 1-to-1 E2EE. |
@@ -638,7 +707,7 @@ flowchart LR
 flowchart TB
     subgraph SAME["Same in both: content encryption"]
         K1["Identity keys + prekeys"]
-        K2["X3DH key agreement"]
+        K2["Key agreement: X3DH base (Signal now uses PQXDH)"]
         K3["Double Ratchet: forward secrecy + break-in recovery"]
         K4["Message keys encrypt each message"]
     end
@@ -686,7 +755,7 @@ sequenceDiagram
     S-->>A: IK_B, SPK_B + signature, OPK_B
     Note over A: Verify signature, optionally verify safety number
     Note over A: Generate ephemeral key EK_A
-    Note over A: X3DH: DH1..DH4, SK = HKDF(...)
+    Note over A: PQXDH: DH1..DH4 plus KEM secret, SK = HKDF(...)
     Note over A: SK seeds Root Key, Chain Key, Message Key
     Note over A: Encrypt message with Message Key
     Note over A: Sealed Sender: wrap sender certificate + ciphertext for Bob
@@ -743,10 +812,8 @@ No. Network info (IP, timing), the recipient, and delivery status remain observa
 **Q13. How is Signal different from WhatsApp?**
 Same encryption protocol for messages. Signal minimizes metadata and is fully open source; WhatsApp collects more metadata and has closed components.
 
-**Q14. Is it quantum-safe?**
-Newer Signal versions add post-quantum protection to the initial handshake (PQXDH) and to the ratchet. Older descriptions (X3DH only, as in many diagrams) predate this.
-
----
+**Q14. Is it quantum-safe? Did PQXDH replace X3DH?**
+PQXDH extends X3DH rather than discarding it: same keys and DH calculations, plus a post-quantum KEM secret mixed into the shared secret. Signal now uses PQXDH for new chats and added a post-quantum ratchet (SPQR) in 2025. Authentication still uses classical keys, so it is 'quantum-resistant against harvest-now-decrypt-later', not 'fully post-quantum'.
 
 **Q15. On what basis does Signal differ from WhatsApp?**
 Content encryption is the same (Signal Protocol). The differences are organization (non-profit vs Meta), source code (fully open vs partly closed), metadata (minimal and Sealed Sender vs more collected), contact discovery, groups and profiles privacy, usernames, and backup/business features. See section 21.
